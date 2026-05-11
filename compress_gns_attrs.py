@@ -231,10 +231,17 @@ def main():
         "group_report": group_report,
         "sh_report": sh_report,
         "size_report": size_report,
+        "degree_per_gaussian_path": "rdgns_degree_per_gaussian.pt",
+        "degree_per_gaussian_saved": not args.dry_run,
     }
 
     if not args.dry_run:
         copy_cfg_args(args.model_path, args.output_model)
+        os.makedirs(args.output_model, exist_ok=True)
+        torch.save(
+            degree_per_gaussian.detach().to(dtype=torch.long).cpu(),
+            os.path.join(args.output_model, "rdgns_degree_per_gaussian.pt"),
+        )
         output_ply = os.path.join(
             args.output_model,
             "point_cloud",
@@ -245,8 +252,10 @@ def main():
         save_report(report, os.path.join(args.output_model, args.report_name))
         print(f"Compressed model saved to: {output_ply}")
         print(f"Compression report saved to: {os.path.join(args.output_model, args.report_name)}")
+        print(f"Degree mask saved to: {os.path.join(args.output_model, 'rdgns_degree_per_gaussian.pt')}")
     else:
         print("Dry run enabled. Model files were not written.")
+        print("degree_per_gaussian was computed but not saved because --dry_run is enabled.")
 
     print(json.dumps(report, indent=2))
 
