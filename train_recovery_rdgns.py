@@ -63,22 +63,47 @@ def save_recovery_point_cloud(gaussians, output_model, iteration):
     return output_ply
 
 
+def ensure_recovery_args(args):
+    if not hasattr(args, "iterations") or args.iterations is None:
+        args.iterations = 3000
+    if not hasattr(args, "save_iterations") or args.save_iterations is None:
+        args.save_iterations = [args.iterations]
+    if not hasattr(args, "test_iterations") or args.test_iterations is None:
+        args.test_iterations = [args.iterations]
+    if not hasattr(args, "lambda_dssim") or args.lambda_dssim is None:
+        args.lambda_dssim = 0.2
+    if not hasattr(args, "freeze_xyz") or args.freeze_xyz is None:
+        args.freeze_xyz = True
+    if not hasattr(args, "enforce_sh_mask") or args.enforce_sh_mask is None:
+        args.enforce_sh_mask = True
+    if not hasattr(args, "load_iteration") or args.load_iteration is None:
+        args.load_iteration = -1
+    if not hasattr(args, "dry_run") or args.dry_run is None:
+        args.dry_run = False
+    if not hasattr(args, "debug_from") or args.debug_from is None:
+        args.debug_from = -1
+    return args
+
+
 def main():
     parser = ArgumentParser(description="RD-GNS stage-2 mask-constrained recovery fine-tuning.")
     model = ModelParams(parser, sentinel=True)
     opt_group = OptimizationParams(parser)
     pipeline = PipelineParams(parser)
     parser.add_argument("--output_model", required=True, type=str)
-    parser.add_argument("--iteration", default=-1, type=int)
-    parser.add_argument("--iterations", default=3000, type=int)
-    parser.add_argument("--freeze_xyz", action="store_true", default=True)
-    parser.add_argument("--enforce_sh_mask", action="store_true", default=True)
-    parser.add_argument("--lambda_dssim", default=0.2, type=float)
+    parser.add_argument("--load_iteration", default=-1, type=int)
     parser.add_argument("--save_iterations", nargs="+", type=int, default=None)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=None)
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--debug_from", type=int, default=-1)
+    parser.add_argument("--dry_run", action="store_true")
+    parser.add_argument("--freeze_xyz", dest="freeze_xyz", action="store_true")
+    parser.add_argument("--no_freeze_xyz", dest="freeze_xyz", action="store_false")
+    parser.add_argument("--enforce_sh_mask", dest="enforce_sh_mask", action="store_true")
+    parser.add_argument("--no_enforce_sh_mask", dest="enforce_sh_mask", action="store_false")
+    parser.set_defaults(freeze_xyz=True, enforce_sh_mask=True)
     args = get_combined_args(parser)
+    args = ensure_recovery_args(args)
 
     source_model_path = args.model_path
     output_model = os.path.abspath(args.output_model)
@@ -89,6 +114,19 @@ def main():
 
     args.save_iterations = sorted(set(args.save_iterations or [args.iterations]))
     args.test_iterations = sorted(set(args.test_iterations or [args.iterations]))
+
+    if args.dry_run:
+        degree_path = os.path.join(source_model_path, "rdgns_degree_per_gaussian.pt")
+        if not os.path.isfile(degree_path):
+            raise FileNotFoundError(
+                "Missing rdgns_degree_per_gaussian.pt. "
+                "Please rerun compress_gns_attrs.py with the updated Stage-2 version."
+            )
+        resolved_args = dict(vars(args))
+        resolved_args["output_model"] = output_model
+        resolved_args["degree_mask_exists"] = True
+        print(json.dumps(resolved_args, indent=2, sort_keys=True, default=str))
+        return
 
     safe_state(args.quiet)
     prepare_recovery_output(source_model_path, output_model)
@@ -104,7 +142,7 @@ def main():
     opt.opacity_reset_interval = args.iterations + 1
 
     gaussians = GaussianModel(dataset.sh_degree, opt.optimizer_type)
-    scene = Scene(dataset, gaussians, load_iteration=args.iteration, shuffle=True)
+    scene = Scene(dataset, gaussians, load_iteration=args.load_iteration, shuffle=True)
     gaussians.training_setup(opt)
 
     if args.freeze_xyz:
