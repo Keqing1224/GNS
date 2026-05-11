@@ -45,8 +45,7 @@ def infer_sh_rest_layout(features_rest: torch.Tensor, max_sh_degree: int) -> Dic
     )
 
 
-def apply_sh_degree_mask(gaussians, degree_per_gaussian: torch.Tensor, max_sh_degree: int):
-    features_rest = gaussians._features_rest
+def build_rest_keep_mask(features_rest: torch.Tensor, degree_per_gaussian: torch.Tensor, max_sh_degree: int, expand: bool = False):
     layout = infer_sh_rest_layout(features_rest, max_sh_degree)
     expected_rest_coeffs = rest_sh_coeffs_for_degree(max_sh_degree)
 
@@ -71,6 +70,16 @@ def apply_sh_degree_mask(gaussians, degree_per_gaussian: torch.Tensor, max_sh_de
     else:
         keep_mask = coeff_ids.unsqueeze(0) < keep_rest_counts.unsqueeze(1)
         keep_mask = keep_mask.unsqueeze(1)
+
+    if expand:
+        keep_mask = keep_mask.expand_as(features_rest)
+
+    return keep_mask, layout
+
+
+def apply_sh_degree_mask(gaussians, degree_per_gaussian: torch.Tensor, max_sh_degree: int):
+    features_rest = gaussians._features_rest
+    keep_mask, layout = build_rest_keep_mask(features_rest, degree_per_gaussian, max_sh_degree, expand=False)
 
     with torch.no_grad():
         features_rest.mul_(keep_mask.to(dtype=features_rest.dtype))
